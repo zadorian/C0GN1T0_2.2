@@ -1,0 +1,24 @@
+[
+  {
+    "query": "szabo",
+    "timestamp": "2025-01-22T15:02:52.190139",
+    "results": [
+      {
+        "url": "https://millenniumintel.com/team.html",
+        "timestamp": "2025-01-22",
+        "title": "",
+        "matching_paragraphs": [
+          "![team-partner](https://millenniumintel.com/assets/img/tama-szabo.jpg)",
+          "### Tamas Szabo",
+          "![team-partner](https://millenniumintel.com/assets/img/domonkos-szabo.jpg)",
+          "### Domonkos Szabo",
+          "![team-partner](https://millenniumintel.com/assets/img/tama-szabo.jpg)",
+          "### Tamas Szabo",
+          "![team-partner](https://millenniumintel.com/assets/img/domonkos-szabo.jpg)",
+          "### Domonkos Szabo"
+        ],
+        "score": 3.605681651215548
+      }
+    ]
+  }
+]

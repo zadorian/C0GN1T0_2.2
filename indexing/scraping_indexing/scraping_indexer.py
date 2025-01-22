@@ -17,11 +17,9 @@ sys.path.append(str(project_root))
 
 class ScrapingIndexer:
     def __init__(self, index_dir: Optional[str] = None):
-        # Use provided index directory or default to current directory
-        if index_dir:
-            self.index_dir = Path(index_dir)
-        else:
-            self.index_dir = Path(__file__).parent
+        # Always use the current directory for index storage
+        self.index_dir = Path(__file__).parent / 'index'
+        self.index_dir.mkdir(exist_ok=True)
         self.analyzer = StandardAnalyzer()
         
         # Initialize or get existing index
