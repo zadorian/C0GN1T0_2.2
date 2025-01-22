@@ -1,0 +1,21 @@
+# Core HTTP and parsing
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0  # for faster BS4 parsing
+
+# Search indexing
+whoosh>=2.7.4
+
+# Browser automation (for FireCrawl)
+selenium>=4.11.0
+undetected-chromedriver>=3.5.0
+webdriver-manager>=4.0.0
+
+# HTML processing
+html2text>=2020.1.16
+trafilatura>=1.6.1
+
+# Utility
+python-dateutil>=2.8.2
+tqdm>=4.65.0  # for progress bars
+aiohttp>=3.8.5  # for async requests 
