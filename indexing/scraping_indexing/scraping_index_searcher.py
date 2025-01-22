@@ -109,15 +109,24 @@ def save_to_memory(query: str, matches: List[Dict]) -> str:
         # Save updated memory
         OPERATIONAL_MEMORY_FILE.write_text(json.dumps(memory_data, indent=2))
         
-        # Get AI analysis
+        # Get AI analysis with improved prompt
         context = json.dumps(matches, indent=2)
-        prompt = f"""Analyze these search results for query: "{query}"
-        
-        Provide a clear summary that:
-        1. Highlights key information found
-        2. Notes any patterns or interesting connections
-        3. Suggests potential areas for further investigation
-        
+        prompt = f"""Analyze ALL search results for query: "{query}"
+
+        Important: If there are multiple distinct entities (people, companies, etc.) matching the search term, analyze EACH ONE separately and note their relationships.
+
+        For each distinct match:
+        1. Who/what is it? (name, role, location, etc.)
+        2. What is their context? (company, position, responsibilities)
+        3. What are their connections to other matches?
+        4. What unique information is provided about them?
+
+        Then provide:
+        1. Patterns and relationships between different matches
+        2. Common themes or connections
+        3. Potential areas for further investigation
+        4. Any inconsistencies or gaps in the information
+
         Results: {context}
         """
         
