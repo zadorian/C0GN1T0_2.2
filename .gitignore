@@ -43,4 +43,31 @@ Thumbs.db
 
 # Project specific
 cache/
-*.log 
+*.log
+
+# Ignore all JSON files
+*.json
+
+# Whoosh index files
+*.toc
+*.seg
+*.pst
+*.dct
+*.dir
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db 
