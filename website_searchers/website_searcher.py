@@ -62,9 +62,10 @@ class WebsiteSearcher:
             else:
                 search_object, scrape_target = None, command.strip()
 
-            # 2) Get content based on presence of '!'
+            # 2) Based on presence of '!', decide if it's archived or current
             content = None
-            if '!' in scrape_target:
+            if '!' in scrape_target or '<-!' in scrape_target:
+                # HISTORIC
                 print("\nFetching HISTORIC content...")
                 if '<-!' in scrape_target:
                     parts = scrape_target.split('<-!')
@@ -82,6 +83,7 @@ class WebsiteSearcher:
                     is_domain_wide=url_part.endswith('?')
                 )
             else:
+                # CURRENT
                 print("\nFetching CURRENT content...")
                 content = await self.content_controller.get_content(scrape_target)
 
@@ -89,14 +91,8 @@ class WebsiteSearcher:
             if not content:
                 return "No content found for target URL"
 
-            # 4) Determine search type and execute
+            # 4) If there's a search object, do NER, AI, or keyword
             if search_object:
-                # Check if this is an AI query (>3 words not in quotes)
-                words = search_object.split()
-                if len(words) > 3 and not (search_object.startswith('"') or search_object.startswith("'")):
-                    print("\nExecuting AI search...")
-                    return await handle_ai_search(search_object, content)
-                
                 # Handle multiple search types (e.g., "p! c! l!")
                 search_types = search_object.split()
                 
@@ -110,8 +106,7 @@ class WebsiteSearcher:
                     })
                 # AI search?
                 elif any(t.startswith('ai') for t in search_types):
-                    print("\nExecuting AI search...")
-                    return await handle_ai_search(search_object, content)
+                    return await handle_ai_search(scrape_target, content)
                 # Keyword search
                 else:
                     return handle_keyword_search(search_types[0], scrape_target, content)

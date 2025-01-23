@@ -479,6 +479,8 @@ class ContentCache:
         if '://' in url:
             url = url.split('://', 1)[1]
         domain = url.split('/', 1)[0]
+        # Remove www. and any port numbers
+        domain = domain.replace('www.', '')
         if ':' in domain:
             domain = domain.split(':', 1)[0]
         return domain

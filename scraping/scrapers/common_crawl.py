@@ -74,13 +74,13 @@ async def fetch_and_parse_content(result: Dict, session: aiohttp.ClientSession, 
                         }],
                         'metadata': {
                             'domain': urlparse(result.get('url')).netloc,
-                            'date': result.get('timestamp', '')[6:8] + result.get('timestamp', '')[4:6] + result.get('timestamp', '')[2:4],  # DDMMYY
+                            'date': result.get('timestamp')[6:8] + result.get('timestamp')[4:6] + result.get('timestamp')[2:4],  # DDMMYY
                             'source': 'commoncrawl',
                             'is_domain_wide': False
                         }
                     }
                     
-                    # Use the correct cache_checker with year parameter
+                    # Use the correct date from the content for caching
                     cache_checker.cache_content(
                         url=result.get('url'),
                         content=parsed_content,
@@ -228,10 +228,6 @@ async def get_historic_content(url: str, year: str, is_domain_wide: bool = False
                                 
                         print(f"Found {len(results)} pages in index {index}")
                         
-                        # For specific page search, we can break after finding content
-                        if not is_domain_wide and all_pages:
-                            break
-                            
                 except Exception as e:
                     print(f"Error querying index {index}: {str(e)}")
                     continue

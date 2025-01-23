@@ -107,11 +107,15 @@ class CacheChecker:
             clean_url = self._normalize_url(url)
             domain = clean_url.split('/')[0]
 
-            # Decide suffix and source
-            source = 'archived' if is_historic else 'firecrawl'
-            suffix = 'c' if is_historic else 'f'
+            # Get date from content's metadata if it exists, otherwise use today
+            date_str = content.get('metadata', {}).get('date')
+            if not date_str:
+                date_str = datetime.now().strftime('%d%m%y')
 
-            date_str = datetime.now().strftime('%d%m%y')
+            # Decide suffix based on source
+            source = content.get('metadata', {}).get('source', '').lower()
+            suffix = 'w' if source == 'wayback' else 'c' if source == 'commoncrawl' else 'f'
+
             filename = f"{domain}_{date_str}_{suffix}.json"
 
             # Add minimal metadata if missing

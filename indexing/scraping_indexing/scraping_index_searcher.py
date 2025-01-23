@@ -36,37 +36,49 @@ def search_index(query: str) -> List[Dict]:
     with ix.searcher() as searcher:
         # Make search case-insensitive
         query_parser = QueryParser("content", ix.schema)
-        q = query_parser.parse(query.lower())  # Convert query to lowercase
+        q = query_parser.parse(query.lower())
         results = searcher.search(q, limit=10)
         
+        # Use set to track unique URL+timestamp combinations
+        seen = set()
         matches = []
+        
         for r in results:
             # Get content and do case-insensitive split
-            content = r.get('content', '').lower()  # Convert content to lowercase
+            content = r.get('content', '').lower()
             query_lower = query.lower()
             parts = content.split(query_lower)
             
             # Get original content for display
             original_content = r.get('content', '')
+            url = r['url']
+            timestamp = r['timestamp']
             
-            for i in range(len(parts)-1):
-                # Find the actual position in original text to preserve case
-                start_pos = len(parts[i])
-                end_pos = start_pos + len(query)
-                original_match = original_content[start_pos:end_pos]
+            # Only process this URL+timestamp combination if we haven't seen it
+            key = f"{url}_{timestamp}"
+            if key not in seen:
+                seen.add(key)
                 
-                context = {
-                    'before': original_content[max(0, start_pos-500):start_pos],
-                    'match': original_match,  # Preserve original case
-                    'after': original_content[end_pos:end_pos+500]
-                }
-                
-                matches.append({
-                    'url': r['url'],
-                    'timestamp': r['timestamp'],
-                    'context': context,
-                    'score': r.score
-                })
+                # Find the first good match in the content
+                for i in range(len(parts)-1):
+                    start_pos = len(parts[i])
+                    end_pos = start_pos + len(query)
+                    original_match = original_content[start_pos:end_pos]
+                    
+                    context = {
+                        'before': original_content[max(0, start_pos-500):start_pos],
+                        'match': original_match,
+                        'after': original_content[end_pos:end_pos+500]
+                    }
+                    
+                    matches.append({
+                        'url': url,
+                        'timestamp': timestamp,
+                        'context': context,
+                        'score': r.score
+                    })
+                    # Only take the first match from this document
+                    break
             
         return matches
 
@@ -74,11 +86,19 @@ def format_raw_results(matches: List[Dict]) -> str:
     """Format raw search results with extended context"""
     output = []
     for match in matches:
-        output.append(f"\n=== MATCH ===")
-        output.append(f"URL: {match['url']}")
-        output.append(f"Time: {match['timestamp']}")
-        output.append(f"Relevance: {match['score']:.2f}")
-        output.append("\nContext:")
+        # Convert timestamp to readable date
+        try:
+            ts = match['timestamp']
+            if len(ts) >= 8:  # Basic validation
+                date = datetime.strptime(ts[:8], '%Y%m%d')
+                date_str = date.strftime('%d %B %Y')
+            else:
+                date_str = "Unknown Date"
+        except Exception:
+            date_str = "Unknown Date"
+            
+        # Format URL and date with spacing
+        output.append(f"\n{match['url']} [{date_str}]\n")  # Added newline after date
         
         # Clean up the context by removing excessive whitespace and line breaks
         before = ' '.join(match['context']['before'].split())
@@ -87,7 +107,7 @@ def format_raw_results(matches: List[Dict]) -> str:
         output.append(f"...{before}")
         output.append(f"**{match['context']['match']}**")
         output.append(f"{after}...")
-        output.append("-" * 80)
+        output.append("-" * 80)  # Separator line
     return "\n".join(output)
 
 def save_to_memory(query: str, matches: List[Dict]) -> str:
@@ -113,19 +133,21 @@ def save_to_memory(query: str, matches: List[Dict]) -> str:
         context = json.dumps(matches, indent=2)
         prompt = f"""Analyze ALL search results for query: "{query}"
 
-        Important: If there are multiple distinct entities (people, companies, etc.) matching the search term, analyze EACH ONE separately and note their relationships.
+        IMPORTANT: Always start your analysis by stating the date range of the information (e.g., "Based on data from March 2021 to November 2023").
 
         For each distinct match:
         1. Who/what is it? (name, role, location, etc.)
         2. What is their context? (company, position, responsibilities)
         3. What are their connections to other matches?
         4. What unique information is provided about them?
+        5. When was this information valid? (specify dates)
 
         Then provide:
         1. Patterns and relationships between different matches
         2. Common themes or connections
         3. Potential areas for further investigation
         4. Any inconsistencies or gaps in the information
+        5. Timeline of any changes or developments
 
         Results: {context}
         """

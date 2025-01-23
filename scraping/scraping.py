@@ -1,67 +1,52 @@
-import sys
-from pathlib import Path
 import asyncio
-from typing import Dict, Optional
-import traceback
+import sys
 
-# Add project root to path
-current_dir = Path(__file__).parent.parent
-sys.path.append(str(current_dir))
-
-from config import config
-from caching.scrape_caching import content_cache
-
-class ContentController:
-    def __init__(self):
-        # Add Content directory to path - using CORRECT casing!
-        sys.path.append(str(Path(config.CONTENT_DIR)))
-        self.content_cache = content_cache
-        
-    async def get_content(self, url: str) -> Optional[Dict]:
-        """Route to appropriate content getter based on URL format"""
-        try:
-            # Historic content (any URL with !)
-            if '!' in url:
-                # Import here to avoid circular import
-                from . import archived_scraping
-                return await archived_scraping.content_controller.get_content(url)
-            
-            # Current content (everything else)
-            return await self.content_cache.get_content(url)
-            
-        except Exception as e:
-            print(f"Error routing content request: {str(e)}")
-            traceback.print_exc()
-            return None
-
-# Single global instance
-content_controller = ContentController()
+# Import the needed functions/classes from the existing modules
+from archived_scraping import handle_command as archived_handle_command, content_controller as archived_content_controller
+from current_scraping import content_controller as current_content_controller
 
 async def main():
-    """Simple interface for testing content fetching"""
-    print("\nC0GN1T0 Content Fetcher")
-    print("=" * 50)
-    print("\nURL formats:")
-    print("- Historic specific year: 2020!example.com")
-    print("- Historic year range: 2021-2023!example.com")
-    print("- Historic back to year: 2020<-!example.com")
-    print("- Current single page: ?example.com/page.html")
-    print("- Current full domain: example.com?")
-    print("\nType 'quit' to exit")
+    print("\nUnified Content Retrieval System")
+    print("================================\n")
     
+    # Short usage instructions from both modules:
+    print("ARCHIVED SCRAPING usage:")
+    print(" - Single year:     e.g. 2022! domain.com?")
+    print(" - Year range:      e.g. 2020-2023! domain.com?")
+    print(" - Backwards:       e.g. 2020<-! domain.com?")
+    print("\nCURRENT SCRAPING usage:")
+    print(" - Normal URL:      e.g. example.com/page.html")
+    print(" - Single page:     e.g. ?example.com/page.html")
+    print(" - Full domain:     e.g. example.com?\n")
+    
+    print("Type 'quit' to exit.\n")
+
     while True:
-        url = input("\nEnter URL: ").strip()
-        if url.lower() == 'quit':
+        command = input("Enter command: ").strip()
+        if command.lower() == "quit":
             break
-            
-        print(f"\nProcessing: {url}")
-        print("=" * 50)
         
-        content = await content_controller.get_content(url)
-        if content:
-            print("\nContent retrieved and cached. Use memory search to explore.")
+        # If the user includes '!' or '<-!', we treat it as an archived (historic) command.
+        # Otherwise, we treat it as a request for current content.
+        if "!" in command or "<-!" in command:
+            try:
+                result = await archived_handle_command(command, archived_content_controller)
+                print(f"\n{result}\n")
+            except Exception as e:
+                print(f"\nError processing archived command: {str(e)}\n")
         else:
-            print("\nNo content retrieved")
+            # Handle current scraping requests
+            # The command is used as the URL (including possible `?` suffix or prefix).
+            try:
+                content = await current_content_controller.get_content(command)
+                if content:
+                    print("\nContent retrieved successfully!")
+                    pages = content.get('pages', [])
+                    print(f"Pages found: {len(pages)}\n")
+                else:
+                    print("\nNo content retrieved\n")
+            except Exception as e:
+                print(f"\nError processing current request: {str(e)}\n")
 
 if __name__ == "__main__":
     asyncio.run(main())

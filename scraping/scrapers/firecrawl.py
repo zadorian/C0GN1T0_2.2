@@ -22,10 +22,16 @@ async def get_content(url: str, is_domain_wide: bool = False) -> Optional[Dict]:
             domain = domain.split('://', 1)[1]
         domain = domain.split('/', 1)[0]  # Remove any paths
         
+        # Debug: Check API key
+        print(f"\nDEBUG: FireCrawl API Key length: {len(config.FIRECRAWL_API_KEY) if config.FIRECRAWL_API_KEY else 0}")
+        print(f"DEBUG: FireCrawl Base URL: {config.FIRECRAWL_BASE_URL}")
+        
         headers = {
             "Authorization": f"Bearer {config.FIRECRAWL_API_KEY}",
             "Content-Type": "application/json"
         }
+        
+        print(f"DEBUG: Request headers: {headers}")
         
         async with aiohttp.ClientSession() as session:
             if is_domain_wide:

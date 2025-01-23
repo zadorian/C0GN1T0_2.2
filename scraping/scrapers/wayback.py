@@ -29,28 +29,28 @@ class WaybackKeywordScanner:
     async def get_url_snapshots(self, url: str, year: Optional[str] = None) -> List[Dict]:
         """Get HTML snapshots for a URL, optionally filtered by year"""
         try:
+            # Ensure URL is properly formatted
+            if not url.startswith('http://') and not url.startswith('https://'):
+                url = f"http://{url}"  # Wayback needs the protocol
+            
             params = {
                 'url': url,
                 'output': 'json',
                 'fl': 'timestamp,original,mimetype,statuscode,digest',
-                'filter': ['statuscode:200', 'mimetype:text/html'],  # Only HTML content
+                'filter': ['statuscode:200', 'mimetype:text/html'],
                 'collapse': 'digest'  # Remove duplicates
             }
             
             # Add year filter if specified
             if year:
-                if year.endswith('<-'):  # Backwards search
+                if year.endswith('<-'):
                     year = year.rstrip('<-')
-                    if year:  # If year specified, search from that year to present
-                        params['from'] = f'{year}0101'
-                elif '-' in year:  # Year range
+                    params['from'] = f'{year}0101' if year else None
+                elif '-' in year:
                     start_year, end_year = year.split('-')
                     params['from'] = f'{start_year}0101'
                     params['to'] = f'{end_year}1231'
-                elif year.startswith('all-'):  # All from specific year
-                    year = year.split('-')[1]
-                    params['from'] = f'{year}0101'
-                else:  # Specific year
+                else:
                     params['from'] = f'{year}0101'
                     params['to'] = f'{year}1231'
             
@@ -59,36 +59,48 @@ class WaybackKeywordScanner:
                     if response.status == 200:
                         data = await response.json()
                         if len(data) > 1:  # Skip header row
-                            snapshots = []
+                            snapshots_by_date = {}
+                            print(f"Found {len(data) - 1} snapshots")
+                            
                             for row in data[1:]:
                                 timestamp, original_url, mimetype, status, digest = row
-                                
-                                # Get actual content for this snapshot
+                                date = f"{timestamp[6:8]}{timestamp[4:6]}{timestamp[2:4]}"  # DDMMYY
                                 snapshot_url = f"{self.wayback_base}/{timestamp}/{original_url}"
-                                async with session.get(snapshot_url) as snapshot_response:
-                                    if snapshot_response.status == 200:
-                                        html = await snapshot_response.text()
-                                        soup = BeautifulSoup(html, 'html.parser')
-                                        text = soup.get_text(separator=' ', strip=True)
-                                        
-                                        # Create content in EXACT FireCrawl format
-                                        snapshot_content = {
-                                            'urls': [{
+                                
+                                try:
+                                    async with session.get(snapshot_url) as snapshot_response:
+                                        if snapshot_response.status == 200:
+                                            html = await snapshot_response.text()
+                                            soup = BeautifulSoup(html, 'html.parser')
+                                            text = soup.get_text(separator=' ', strip=True)
+                                            
+                                            if not text:
+                                                continue
+                                            
+                                            url_entry = {
                                                 'url': original_url,
                                                 'text': text,
                                                 'timestamp': timestamp
-                                            }],
-                                            'metadata': {
-                                                'domain': urlparse(original_url).netloc,
-                                                'date': timestamp[6:8] + timestamp[4:6] + timestamp[2:4],  # DDMMYY
-                                                'source': 'wayback',
-                                                'is_domain_wide': False
                                             }
-                                        }
-                                        snapshots.append(snapshot_content)
-                        
+                                            
+                                            if date not in snapshots_by_date:
+                                                snapshots_by_date[date] = {
+                                                    'urls': [],
+                                                    'metadata': {
+                                                        'domain': urlparse(url).netloc,
+                                                        'date': date,
+                                                        'source': 'wayback',
+                                                        'is_domain_wide': False
+                                                    }
+                                                }
+                                            snapshots_by_date[date]['urls'].append(url_entry)
+                                except Exception as e:
+                                    print(f"Error fetching {snapshot_url}: {str(e)}")
+                                    continue
+                            
+                            snapshots = list(snapshots_by_date.values())
                             return snapshots
-                        
+        
             return []
             
         except Exception as e:

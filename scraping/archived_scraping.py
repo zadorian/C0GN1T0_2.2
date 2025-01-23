@@ -17,6 +17,7 @@ from scrapers.common_crawl import get_historic_content
 from scrapers.wayback import WaybackKeywordScanner
 from caching.scrape_caching import content_cache
 from caching.cache_checker import cache_checker
+from indexing.scraping_indexing.scraping_indexer import scraping_indexer
 
 # Use the correct cache directory
 CACHE_DIR = project_root / "cache"
@@ -46,27 +47,27 @@ class ArchivedContent:
             if is_domain_wide:
                 print("Performing domain-wide search...")
                 
-                # Get Common Crawl content first - it handles its own caching
+                # Get Common Crawl content first
                 cc_content = await get_historic_content(url, year, is_domain_wide=True)
+                if cc_content and 'pages' in cc_content:
+                    print(f"Found {len(cc_content['pages'])} CommonCrawl pages...")
+                    scraping_indexer.index_content(cc_content)
                 
-                # Get Wayback content (now grouped by date)
+                # Get Wayback content
                 wb_snapshots = await self.wayback.get_domain_snapshots(url, year)
-                
-                # Let caching.py handle the caching for each date's snapshots
                 if wb_snapshots:
+                    print(f"Found {len(wb_snapshots)} Wayback snapshots...")
                     for date_content in wb_snapshots:
                         content_cache.save_content(
                             url=url,
                             content=date_content,
                             date=date_content['metadata']['date']
                         )
+                        scraping_indexer.index_content(date_content)
                 
-                # Return summary of what was found
+                # Return summary
                 total_cc = len(cc_content['pages']) if cc_content and 'pages' in cc_content else 0
                 total_wb = sum(len(snapshot['urls']) for snapshot in wb_snapshots) if wb_snapshots else 0
-                
-                print(f"\nFound {total_cc} pages from Common Crawl")
-                print(f"Found {total_wb} pages from Wayback Machine")
                 
                 return {
                     'summary': {
@@ -77,58 +78,37 @@ class ArchivedContent:
                 }
                 
             else:
-                # For single page searches, combine Common Crawl and Wayback
+                # For single page searches
                 all_urls = []
-                current_year = datetime.now().year
                 
-                # Handle backwards search for single pages
-                if year and '<-!' in year:
-                    start_year = int(year.replace('<-!', '')) if year.replace('<-!', '').strip() else 2000
-                    print(f"DEBUG: Backwards search from {current_year} to {start_year}")
-                    
-                    for y in range(current_year, start_year - 1, -1):
-                        print(f"\nChecking year: {y}")
-                        
-                        try:
-                            cc_content = await get_historic_content(url, str(y), is_domain_wide=False)
-                            if cc_content and 'pages' in cc_content:
-                                for page in cc_content['pages']:
-                                    page['source'] = 'commoncrawl'
-                                    all_urls.append(page)
-                        except Exception as e:
-                            print(f"CommonCrawl error for {y}: {str(e)}")
-                        
-                        try:
-                            wb_content = await self.wayback.get_url_snapshots(url, str(y))
-                            if wb_content:
-                                for snapshot in wb_content:
-                                    snapshot['source'] = 'wayback'
-                                    all_urls.append(snapshot)
-                        except Exception as e:
-                            print(f"Wayback error for {y}: {str(e)}")
-                        
-                else:
-                    # Regular single year search
-                    try:
-                        cc_content = await get_historic_content(url, year, is_domain_wide=False)
-                        if cc_content and 'pages' in cc_content:
-                            for page in cc_content['pages']:
-                                page['source'] = 'commoncrawl'
-                                all_urls.append(page)
-                    except Exception as e:
-                        print(f"CommonCrawl error: {str(e)}")
-                        
-                    try:
-                        wb_content = await self.wayback.get_url_snapshots(url, year)
-                        if wb_content:
-                            for snapshot in wb_content:
-                                snapshot['source'] = 'wayback'
-                                all_urls.append(snapshot)
-                    except Exception as e:
-                        print(f"Wayback error: {str(e)}")
+                # Get Common Crawl content
+                try:
+                    cc_content = await get_historic_content(url, year, is_domain_wide=False)
+                    if cc_content and 'pages' in cc_content:
+                        print(f"Found {len(cc_content['pages'])} CommonCrawl pages...")
+                        scraping_indexer.index_content(cc_content)
+                        for page in cc_content['pages']:
+                            page['source'] = 'commoncrawl'
+                            all_urls.append(page)
+                except Exception as e:
+                    print(f"CommonCrawl error: {str(e)}")
+                
+                # Get Wayback content
+                try:
+                    print(f"\nSearching Wayback Machine for year: {year}")
+                    wb_content = await self.wayback.get_url_snapshots(url, year)
+                    if wb_content:
+                        print(f"Found {len(wb_content)} Wayback snapshots...")
+                        for snapshot in wb_content:
+                            scraping_indexer.index_content(snapshot)
+                            for url_data in snapshot.get('urls', []):
+                                url_data['content'] = url_data.get('text', '')
+                                url_data['source'] = 'wayback'
+                                all_urls.append(url_data)
+                except Exception as e:
+                    print(f"Wayback error: {str(e)}")
 
                 if all_urls:
-                    # Let caching.py handle all caching
                     for page in all_urls:
                         timestamp = page.get('timestamp', '')
                         if timestamp and len(timestamp) >= 14:
@@ -136,7 +116,8 @@ class ArchivedContent:
                             content = {
                                 'urls': [{
                                     'url': page['url'],
-                                    'text': page.get('content', ''),
+                                    'text': page.get('text', ''),
+                                    'content': page.get('content', ''),
                                     'timestamp': timestamp
                                 }],
                                 'metadata': {
@@ -147,6 +128,7 @@ class ArchivedContent:
                                 }
                             }
                             content_cache.save_content(url=page['url'], content=content, date=date)
+                            scraping_indexer.index_content(content)
                     
                     return {
                         'summary': {
@@ -207,36 +189,50 @@ content_controller = ArchivedContent()
 async def handle_command(command: str, archiver: ArchivedContent) -> str:
     """Handle archive command"""
     try:
-        # Parse command
+        all_content = []
+        url = None
+        
         if '<-!' in command:
+            # Handle backwards search
             parts = command.split('<-!')
-            year = parts[0].strip() if len(parts) == 2 and parts[0].strip() else None
+            start_year = parts[0].strip() if len(parts) == 2 and parts[0].strip() else None
             url = parts[1].strip()
-            year = f"{year}<-" if year else "<-"
-        elif '!' in command:
+            current_year = datetime.now().year
+            start_year = int(start_year) if start_year else 2000
+            
+            print(f"\nSearching years {current_year} back to {start_year}...")
+            for year in range(current_year, start_year - 1, -1):
+                content = await archiver.get_content(url=url, year=str(year), is_domain_wide=url.endswith('?'))
+                if content:
+                    all_content.append(content)
+                    
+        elif '-' in command and '!' in command:
+            # Handle year range search
+            parts = command.split('!')
+            year_range, url = parts[0].strip(), parts[1].strip()
+            start_year, end_year = map(int, year_range.split('-'))
+            
+            print(f"\nSearching years {start_year} through {end_year}...")
+            for year in range(start_year, end_year + 1):
+                content = await archiver.get_content(url=url, year=str(year), is_domain_wide=url.endswith('?'))
+                if content:
+                    all_content.append(content)
+        else:
+            # Single year search
             parts = command.split('!')
             if len(parts) != 2:
                 return "Invalid command format. Use: YYYY! domain.com? or YYYY! ?webpage.com/path.html"
             year = parts[0].strip()
             url = parts[1].strip()
-        else:
-            return "Invalid command format. Use: YYYY! domain.com? or YYYY! ?webpage.com/path.html"
+            content = await archiver.get_content(url=url, year=year, is_domain_wide=url.endswith('?'))
+            if content:
+                all_content = [content]
 
-        # Determine if domain-wide search
-        is_domain_wide = url.endswith('?')
-        url = url.strip('?')
+        if all_content:
+            total_pages = sum(c.get('summary', {}).get('total_pages', 0) for c in all_content)
+            return f"Retrieved {total_pages} pages for {url}"
         
-        # Get content using the main get_content method which handles both sources
-        content = await archiver.get_content(
-            url=url,
-            year=year,
-            is_domain_wide=is_domain_wide
-        )
-        
-        if not content:
-            return f"No content found for {url}"
-            
-        return f"Retrieved content for {url}"
+        return f"No content found for {url}"
         
     except Exception as e:
         print(f"Error handling command: {str(e)}")
