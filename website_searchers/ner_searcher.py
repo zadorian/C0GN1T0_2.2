@@ -53,135 +53,112 @@ async def process_chunk(text: str, url: str) -> Set[str]:
         print(f"Error in chunk processing: {str(e)}")
         return set()
 
-async def handle_ner_extraction(url: str, options: Dict) -> str:
-    """Extract named entities from content."""
-    ner_type_input = options.get('ner_type', 'p')
-    
-    # If 'ent!', expand to all entity types
-    if 'ent!' in ner_type_input:
-        ner_types = ['p', 'c', 'l', '@', 't']
-    else:
-        ner_types = ner_type_input.split()  # Split into multiple types
-    
-    content = options.get('cached_content', '')
-    
-    print("\nDEBUG: Content type:", type(content))
-    if isinstance(content, dict):
-        print("DEBUG: Content keys:", content.keys())
+async def handle_ner_extraction(url: str, options: dict) -> str:
+    """
+    Extract named entities from content.
+    """
+    try:
+        print("\nExtracting entities from content:")
+        print(f"\n{url}:\n")
         
-        # Get the date from metadata
-        date_str = ""
-        if 'metadata' in content:
-            if 'timestamp' in content['metadata']:
-                timestamp = content['metadata']['timestamp']
-                # Convert YYYYMMDD to readable format
-                try:
-                    from datetime import datetime
-                    date = datetime.strptime(timestamp, '%Y%m%d')
-                    date_str = date.strftime('%d %B %Y')
-                except:
-                    date_str = content['metadata'].get('date', '')
-            else:
-                date_str = content['metadata'].get('date', '')
-        
+        content = options.get('cached_content', {})
+        ner_type = options.get('ner_type', '')
+
         # Dictionary to store text by URL
         url_texts = {}
         
-        # Handle the nested structure from archived content
-        if 'urls' in content:
-            for url_data in content['urls']:
-                url_key = url_data.get('url', 'unknown')
-                if url_data.get('content'):
-                    url_texts[url_key] = url_data['content']
-                elif url_data.get('text'):
-                    url_texts[url_key] = url_data['text']
-        elif 'pages' in content:
-            for page in content['pages']:
-                url_key = page.get('url', 'unknown')
-                if page.get('content'):
-                    url_texts[url_key] = page['content']
-                elif page.get('text'):
-                    url_texts[url_key] = page['text']
-        else:
-            # Single page case
-            if 'text' in content:
+        # Handle different content structures
+        if isinstance(content, dict):
+            if 'pages' in content:
+                for page in content['pages']:
+                    url_key = page.get('url', url)
+                    url_texts[url_key] = page.get('content', page.get('text', ''))
+            elif 'urls' in content:
+                for url_data in content['urls']:
+                    url_key = url_data.get('url', url)
+                    url_texts[url_key] = url_data.get('content', url_data.get('text', ''))
+            elif 'summary' in content:
+                # Historic content structure
+                url_texts[url] = content['summary']
+            elif 'text' in content:
                 url_texts[url] = content['text']
             elif 'content' in content:
                 url_texts[url] = content['content']
-            else:
-                url_texts[url] = str(content)
-    else:
-        url_texts = {url: str(content)}
-        date_str = ""
-    
-    if not url_texts:
-        return "No content found to analyze"
+        else:
+            url_texts[url] = str(content)
 
-    # Process each URL and store results by URL first
-    url_results = {}  # url -> type -> set(entities)
-    type_labels = {
-        'p': 'People',
-        'c': 'Companies/Organizations',
-        'l': 'Locations',
-        '@': 'Email Addresses',
-        't': 'Phone Numbers'
-    }
-    
-    total_entities = 0
-    for url_key, text in url_texts.items():
-        url_results[url_key] = {}
+        if not url_texts:
+            return "No content found to analyze"
+
+        # If 'ent!', expand to all entity types
+        if 'ent!' in ner_type:
+            ner_types = ['p', 'c', 'l', '@', 't']
+        else:
+            ner_types = ner_type.split()  # Split into multiple types
+
+        # Process each URL and store results
+        url_results = {}
+        type_labels = {
+            'p': 'People',
+            'c': 'Companies/Organizations',
+            'l': 'Locations',
+            '@': 'Email Addresses',
+            't': 'Phone Numbers'
+        }
         
-        for ner_type in ner_types:
-            ner_type = ner_type.rstrip('!')  # Remove trailing !
-            entities = extract_entities(text, ner_type)
-            
-            # Post-process people entities to remove first names that are part of full names
-            if ner_type == 'p':
-                full_names = {e for e in entities if len(e.split()) > 1}
-                first_names = {e for e in entities if len(e.split()) == 1}
+        total_entities = 0
+        for url_key, text in url_texts.items():
+            if not text:
+                continue
                 
-                # Remove first names that appear in full names
-                filtered_first_names = set()
-                for first_name in first_names:
-                    appears_in_full = False
-                    for full_name in full_names:
-                        if full_name.lower().startswith(first_name.lower() + " "):
-                            appears_in_full = True
-                            break
-                    if not appears_in_full:
-                        filtered_first_names.add(first_name)
-                
-                entities = sorted(full_names | filtered_first_names)
-            
-            if entities:
-                url_results[url_key][ner_type] = sorted(entities)
-                total_entities += len(entities)
-    
-    # Format output
-    if url_results:
-        result = f"\nExtracting entities from content:\n"
-        
-        # Show results grouped by URL
-        for url_key in sorted(url_results.keys()):
-            result += f"\n{url_key}"
-            if date_str:
-                result += f" [{date_str}]"
-            result += ":\n"
-            
-            # Show each entity type for this URL
+            url_results[url_key] = {}
             for ner_type in ner_types:
                 ner_type = ner_type.rstrip('!')
-                if ner_type in url_results[url_key]:
-                    type_label = type_labels.get(ner_type, f'Type {ner_type}')
-                    result += f"\n{type_label}:\n"
-                    for entity in url_results[url_key][ner_type]:
-                        result += f"- {entity}\n"
+                entities = extract_entities(text, ner_type)
+                
+                # Post-process people entities
+                if ner_type == 'p':
+                    full_names = {e for e in entities if len(e.split()) > 1}
+                    first_names = {e for e in entities if len(e.split()) == 1}
+                    
+                    filtered_first_names = set()
+                    for first_name in first_names:
+                        appears_in_full = False
+                        for full_name in full_names:
+                            if full_name.lower().startswith(first_name.lower() + " "):
+                                appears_in_full = True
+                                break
+                        if not appears_in_full:
+                            filtered_first_names.add(first_name)
+                    
+                    entities = sorted(full_names | filtered_first_names)
+                
+                if entities:
+                    url_results[url_key][ner_type] = sorted(entities)
+                    total_entities += len(entities)
         
-        result += f"\nTotal entities found: {total_entities}"
-        return result
-    else:
-        return f"No entities found in content."
+        # Format output
+        if url_results:
+            result = []
+            for url_key in sorted(url_results.keys()):
+                if url_results[url_key]:  # Only show URLs with results
+                    for ner_type in ner_types:
+                        ner_type = ner_type.rstrip('!')
+                        if ner_type in url_results[url_key]:
+                            type_label = type_labels.get(ner_type, f'Type {ner_type}')
+                            result.append(f"\n{type_label}:")
+                            for entity in url_results[url_key][ner_type]:
+                                result.append(f"- {entity}")
+            
+            result.append(f"\nTotal entities found: {total_entities}")
+            return "\n".join(result)
+        else:
+            return f"No entities found in content."
 
+    except Exception as e:
+        print(f"Error in entity extraction: {e}")
+        traceback.print_exc()
+        return "Error in entity extraction"
 
 def extract_entities(text: str, entity_type: str) -> List[str]:
     """Direct Azure NER on a single text string, returning matching entities."""

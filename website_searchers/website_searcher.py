@@ -42,7 +42,7 @@ class WebsiteSearcher:
 
     async def process_command(self, command: str) -> str:
         """
-        Main entry for search commands. Two formats supported:
+        Main entry for search commands. Three formats supported:
         
         1. Classic format: <searchObject> : <scrapeTarget1>, <scrapeTarget2>, ...
         Examples:
@@ -54,8 +54,19 @@ class WebsiteSearcher:
         Examples:
           ai,ner,keyword -> example.com, example.org/page.html
           p!,c!,l! -> domain.com, 2022! otherdomain.com
+
+        3. Comparison format: <searchObject> : <target1> =? <target2> =? <target3> ...
+        Examples:
+          products sold by the company? :company1.com? =? company2.com?
+          p! :company1.com! =? company2.com?
         """
         try:
+            # Check if this is a comparison command (using =?)
+            if '=?' in command:
+                from website_searchers.comparison import ComparisonSearcher
+                comparison_searcher = ComparisonSearcher()
+                return await comparison_searcher.handle_comparison_command(command)
+            
             # Check if this is a multi-searcher command (using arrow)
             if '->' in command:
                 return await self._handle_multi_searcher_command(command)
