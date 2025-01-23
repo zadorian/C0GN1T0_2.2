@@ -42,34 +42,54 @@ class WebsiteSearcher:
 
     async def process_command(self, command: str) -> str:
         """
-        Main entry for search commands: <searchObject> : <scrapeTarget>
+        Main entry for search commands. Two formats supported:
         
+        1. Classic format: <searchObject> : <scrapeTarget1>, <scrapeTarget2>, ...
         Examples:
-          p! :?sastreconsulting.com/about.html   (NER: People on current single page)
-          c! :2022!example.com?                  (NER: Companies on archived domain)
-          p! c! l! :domain.com?                  (Multiple entity types)
-          ent! :domain.com?                      (All entity types)
+          p! :?sastreconsulting.com/about.html, 2022! ?sastreconsulting.com/about.html   (NER: People on current and 2022 versions)
+          c! :2022! example.com?, 2023! example.com?                                      (NER: Companies from two different years)
+          p! c! l! :domain.com?, otherdomain.com?                                        (Multiple entity types on multiple domains)
+        
+        2. Multi-searcher format: <searcher1>,<searcher2>,... -> <target1>, <target2>, ...
+        Examples:
+          ai,ner,keyword -> example.com, example.org/page.html
+          p!,c!,l! -> domain.com, 2022! otherdomain.com
         """
         try:
-            # 1) Split on ':'
+            # Check if this is a multi-searcher command (using arrow)
+            if '->' in command:
+                return await self._handle_multi_searcher_command(command)
+            
+            # If there's a comma, split into multiple commands and run each
+            if ',' in command and ':' in command:
+                search_object, targets = command.split(':', 1)
+                search_object = search_object.strip()
+                
+                # Split targets and create individual commands
+                all_results = []
+                for target in targets.split(','):
+                    target = target.strip()
+                    cmd = f"{search_object}:{target}"
+                    print(f"\n=== Processing: {cmd} ===")
+                    result = await self.process_command(cmd)
+                    all_results.append(result)
+                return "\n".join(all_results)
+            
+            # Single command processing (existing code)
             if ':' in command:
                 search_object, scrape_target = command.split(':', 1)
                 search_object = search_object.strip()
                 scrape_target = scrape_target.strip()
-                print(f"DEBUG: Split command into:")
-                print(f"- Search object: '{search_object}'")
-                print(f"- Scrape target: '{scrape_target}'")
             else:
                 search_object, scrape_target = None, command.strip()
 
-            # 2) Based on presence of '!', decide if it's archived or current
+            # Get content based on presence of '!'
             content = None
-            if '!' in scrape_target or '<-!' in scrape_target:
-                # HISTORIC
+            if '!' in scrape_target:
                 print("\nFetching HISTORIC content...")
                 if '<-!' in scrape_target:
                     parts = scrape_target.split('<-!')
-                    year_part = parts[0].strip() + '<-' if parts[0].strip() else '<-'
+                    year_part = parts[0].strip() + '<-'
                     url_part = parts[1].strip()
                 else:
                     parts = scrape_target.split('!', 1)
@@ -83,16 +103,26 @@ class WebsiteSearcher:
                     is_domain_wide=url_part.endswith('?')
                 )
             else:
-                # CURRENT
                 print("\nFetching CURRENT content...")
                 content = await self.content_controller.get_content(scrape_target)
 
-            # 3) If no content, bail
+            # If no content, bail
             if not content:
                 return "No content found for target URL"
 
-            # 4) If there's a search object, do NER, AI, or keyword
+            # If there's a search object, do NER, AI, or keyword
             if search_object:
+                # First check if it's a keyword search (in quotes or 1-3 words)
+                if (search_object.startswith('"') or search_object.startswith("'") or
+                    (0 < len(search_object.split()) <= 3 and not search_object.endswith('!'))):
+                    print("\nExecuting keyword search...")
+                    return handle_keyword_search(search_object, scrape_target, content)
+                    
+                # Check if this is an AI query (>3 words not in quotes)
+                elif len(search_object.split()) > 3 and not (search_object.startswith('"') or search_object.startswith("'")):
+                    print("\nExecuting AI search...")
+                    return await handle_ai_search(search_object, content)
+                    
                 # Handle multiple search types (e.g., "p! c! l!")
                 search_types = search_object.split()
                 
@@ -106,17 +136,53 @@ class WebsiteSearcher:
                     })
                 # AI search?
                 elif any(t.startswith('ai') for t in search_types):
-                    return await handle_ai_search(scrape_target, content)
-                # Keyword search
+                    print("\nExecuting AI search...")
+                    return await handle_ai_search(search_object, content)
                 else:
-                    return handle_keyword_search(search_types[0], scrape_target, content)
-            
-            # If no search object, just show how many pages
-            pages = content.get('pages', []) or content.get('urls', [])
-            return f"Retrieved {len(pages)} pages. Use p!, t!, etc. to analyze."
+                    return f"Unknown search type: {search_object}"
+            else:
+                # If no search object, just show how many pages
+                pages = content.get('pages', []) or content.get('urls', [])
+                return f"Retrieved {len(pages)} pages. Use p!, t!, etc. to analyze."
 
         except Exception as e:
             print(f"Error in website searcher: {str(e)}")
+            traceback.print_exc()
+            return f"Error: {str(e)}"
+
+    async def _handle_multi_searcher_command(self, command: str) -> str:
+        """Handle the new multi-searcher command format."""
+        try:
+            # Parse command: "p!,c!,l! -> example.com, example.org"
+            parts = command.split("->")
+            if len(parts) != 2:
+                return "Invalid command format. Expected: searcher1,searcher2,... -> target1, target2, ..."
+
+            searchers_part = parts[0].strip()
+            targets_part = parts[1].strip()
+
+            # Split searchers and targets
+            searchers = [s.strip() for s in searchers_part.split(",") if s.strip()]
+            targets = [t.strip() for t in targets_part.split(",") if t.strip()]
+
+            if not searchers or not targets:
+                return "No searchers or targets found"
+
+            # Process each target with each searcher
+            all_results = []
+            for target in targets:
+                all_results.append(f"\n=== Target: {target} ===")
+                for searcher in searchers:
+                    # Convert searcher to classic format and run
+                    classic_cmd = f"{searcher}:{target}"
+                    print(f"\nRunning {searcher} on {target}")
+                    result = await self.process_command(classic_cmd)
+                    all_results.append(f"\n--- {searcher} results ---\n{result}")
+
+            return "\n".join(all_results)
+
+        except Exception as e:
+            print(f"Error in multi-searcher command: {str(e)}")
             traceback.print_exc()
             return f"Error: {str(e)}"
 
