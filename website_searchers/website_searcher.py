@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import asyncio
 import os
+import logging
 
 #
 # 1) HACK: Insert paths so that "scrapers", "caching", and "indexing" 
@@ -61,6 +62,9 @@ class WebsiteSearcher:
           p! :company1.com! =? company2.com?
         """
         try:
+            # Clean control characters from command
+            command = ''.join(char for char in command if ord(char) >= 32)
+            
             # Check if this is a comparison command (using =?)
             if '=?' in command:
                 from website_searchers.comparison import ComparisonSearcher
@@ -81,7 +85,7 @@ class WebsiteSearcher:
                 for target in targets.split(','):
                     target = target.strip()
                     cmd = f"{search_object}:{target}"
-                    print(f"\n=== Processing: {cmd} ===")
+                    logging.info(f"\n=== Processing: {cmd} ===")
                     result = await self.process_command(cmd)
                     all_results.append(result)
                 return "\n".join(all_results)
@@ -92,29 +96,45 @@ class WebsiteSearcher:
                 search_object = search_object.strip()
                 scrape_target = scrape_target.strip()
             else:
-                search_object, scrape_target = None, command.strip()
+                # For comparison commands, we need to handle each part separately
+                if '=?' in command:
+                    parts = command.split('=?')
+                    first_part = parts[0].strip()
+                    if ':' in first_part:
+                        search_object, scrape_target = first_part.split(':', 1)
+                    else:
+                        search_object, scrape_target = None, first_part
+                else:
+                    search_object, scrape_target = None, command.strip()
 
             # Get content based on presence of '!'
             content = None
             if '!' in scrape_target:
-                print("\nFetching HISTORIC content...")
-                if '<-!' in scrape_target:
-                    parts = scrape_target.split('<-!')
-                    year_part = parts[0].strip() + '<-'
-                    url_part = parts[1].strip()
+                # Check if this is a NER type (p!, c!, etc.)
+                if scrape_target.startswith(('p!', 'c!', 'l!', '@!', 't!', 'ent!')):
+                    # This is a NER type, not a year
+                    logging.info("\nFetching CURRENT content...")
+                    clean_target = scrape_target.split('!', 1)[1].strip()
+                    content = await self.content_controller.get_content(clean_target)
                 else:
-                    parts = scrape_target.split('!', 1)
-                    year_part = parts[0].strip()
-                    url_part = parts[1].strip() if len(parts) > 1 else ''
+                    logging.info("\nFetching HISTORIC content...")
+                    if '<-!' in scrape_target:
+                        parts = scrape_target.split('<-!')
+                        year_part = parts[0].strip() + '<-'
+                        url_part = parts[1].strip()
+                    else:
+                        parts = scrape_target.split('!', 1)
+                        year_part = parts[0].strip()
+                        url_part = parts[1].strip() if len(parts) > 1 else ''
 
-                print(f"Year: {year_part}, URL: {url_part}")
-                content = await self.archiver.get_content(
-                    url=url_part.lstrip('?'),
-                    year=year_part,
-                    is_domain_wide=url_part.endswith('?')
-                )
+                    logging.info(f"Year: {year_part}, URL: {url_part}")
+                    content = await self.archiver.get_content(
+                        url=url_part.lstrip('?'),
+                        year=year_part,
+                        is_domain_wide=url_part.endswith('?')
+                    )
             else:
-                print("\nFetching CURRENT content...")
+                logging.info("\nFetching CURRENT content...")
                 content = await self.content_controller.get_content(scrape_target)
 
             # If no content, bail
@@ -126,12 +146,12 @@ class WebsiteSearcher:
                 # First check if it's a keyword search (in quotes or 1-3 words)
                 if (search_object.startswith('"') or search_object.startswith("'") or
                     (0 < len(search_object.split()) <= 3 and not search_object.endswith('!'))):
-                    print("\nExecuting keyword search...")
+                    logging.info("\nExecuting keyword search...")
                     return handle_keyword_search(search_object, scrape_target, content)
                     
                 # Check if this is an AI query (>3 words not in quotes)
                 elif len(search_object.split()) > 3 and not (search_object.startswith('"') or search_object.startswith("'")):
-                    print("\nExecuting AI search...")
+                    logging.info("\nExecuting AI search...")
                     return await handle_ai_search(search_object, content)
                     
                 # Handle multiple search types (e.g., "p! c! l!")
@@ -140,14 +160,14 @@ class WebsiteSearcher:
                 # Check if any search type is NER-related
                 ner_types = [t for t in search_types if t.rstrip('!') in ['p', 't', 'c', '@', 'e', 'l', 'ent']]
                 if ner_types:
-                    print(f"\nPerforming NER search for types: {' '.join(ner_types)}")
+                    logging.info(f"\nPerforming NER search for types: {' '.join(ner_types)}")
                     return await handle_ner_extraction(scrape_target, {
                         'ner_type': ' '.join(ner_types),
                         'cached_content': content
                     })
                 # AI search?
                 elif any(t.startswith('ai') for t in search_types):
-                    print("\nExecuting AI search...")
+                    logging.info("\nExecuting AI search...")
                     return await handle_ai_search(search_object, content)
                 else:
                     return f"Unknown search type: {search_object}"
@@ -157,8 +177,7 @@ class WebsiteSearcher:
                 return f"Retrieved {len(pages)} pages. Use p!, t!, etc. to analyze."
 
         except Exception as e:
-            print(f"Error in website searcher: {str(e)}")
-            traceback.print_exc()
+            logging.error(f"Error in website searcher: {str(e)}", exc_info=True)
             return f"Error: {str(e)}"
 
     async def _handle_multi_searcher_command(self, command: str) -> str:
@@ -186,15 +205,14 @@ class WebsiteSearcher:
                 for searcher in searchers:
                     # Convert searcher to classic format and run
                     classic_cmd = f"{searcher}:{target}"
-                    print(f"\nRunning {searcher} on {target}")
+                    logging.info(f"\nRunning {searcher} on {target}")
                     result = await self.process_command(classic_cmd)
                     all_results.append(f"\n--- {searcher} results ---\n{result}")
 
             return "\n".join(all_results)
 
         except Exception as e:
-            print(f"Error in multi-searcher command: {str(e)}")
-            traceback.print_exc()
+            logging.error(f"Error in multi-searcher command: {str(e)}", exc_info=True)
             return f"Error: {str(e)}"
 
 

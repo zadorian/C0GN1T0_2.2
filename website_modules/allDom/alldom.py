@@ -1,17 +1,19 @@
 import os
 import sys
 from urllib.parse import urlparse
-from firecrawl_alldom import InternalURLTracker, discover_internal_urls
-from bing_alldom import fetch_bing_results
-from google_alldom import fetch_google_results
-from sublist3r_alldom import sublist3r
-from wayback_list import list_unique_urls
-from url_categorizer import categorize_urls
+from .firecrawl_alldom import InternalURLTracker, discover_internal_urls
+from .bing_alldom import fetch_bing_results
+from .google_alldom import fetch_google_results
+from .sublist3r_alldom import sublist3r
+from .wayback_list import list_unique_urls
+from .url_categorizer import categorize_urls
 import logging
 import time
 import asyncio
 import aiohttp
 import argparse
+from typing import List, Dict
+import json
 
 # Set up logging
 logging.basicConfig(level=logging.ERROR)  # Only show errors

@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import traceback
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 import asyncio
@@ -58,8 +59,8 @@ async def handle_ner_extraction(url: str, options: dict) -> str:
     Extract named entities from content.
     """
     try:
-        print("\nExtracting entities from content:")
-        print(f"\n{url}:\n")
+        logging.info("\nExtracting entities from content:")
+        logging.info(f"\n{url}:\n")
         
         content = options.get('cached_content', {})
         ner_type = options.get('ner_type', '')
@@ -72,11 +73,15 @@ async def handle_ner_extraction(url: str, options: dict) -> str:
             if 'pages' in content:
                 for page in content['pages']:
                     url_key = page.get('url', url)
-                    url_texts[url_key] = page.get('content', page.get('text', ''))
+                    text = page.get('content', '') or page.get('text', '')
+                    if text:
+                        url_texts[url_key] = text
             elif 'urls' in content:
                 for url_data in content['urls']:
                     url_key = url_data.get('url', url)
-                    url_texts[url_key] = url_data.get('content', url_data.get('text', ''))
+                    text = url_data.get('content', '') or url_data.get('text', '')
+                    if text:
+                        url_texts[url_key] = text
             elif 'summary' in content:
                 # Historic content structure
                 url_texts[url] = content['summary']
@@ -156,13 +161,16 @@ async def handle_ner_extraction(url: str, options: dict) -> str:
             return f"No entities found in content."
 
     except Exception as e:
-        print(f"Error in entity extraction: {e}")
-        traceback.print_exc()
+        logging.error(f"Error in entity extraction: {e}", exc_info=True)
         return "Error in entity extraction"
 
 def extract_entities(text: str, entity_type: str) -> List[str]:
     """Direct Azure NER on a single text string, returning matching entities."""
     try:
+        if not text or not isinstance(text, str):
+            logging.warning("Warning: Invalid text input")
+            return []
+
         credential = AzureKeyCredential(config.AZURE_KEY)
         client = TextAnalyticsClient(
             endpoint=config.AZURE_ENDPOINT, 
@@ -180,26 +188,44 @@ def extract_entities(text: str, entity_type: str) -> List[str]:
         if not targets:
             return []
         
-        # Break into 5K chunks
-        chunk_size = 5000
-        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
-        
+        # Break into chunks of 4900 chars to stay well within Azure's 5K limit
+        # and find natural breaking points
         found_entities = set()
-        for chunk in chunks:
-            try:
-                doc = client.recognize_entities(documents=[chunk])[0]
-                if not doc.is_error:
-                    for e in doc.entities:
-                        if e.category in targets:
-                            cleaned = e.text.strip()
-                            if len(cleaned) > 1:
-                                found_entities.add(cleaned)
-            except Exception as ex:
-                print(f"Error processing chunk: {ex}")
-                continue
+        chunk_size = 4900
+        start = 0
+        
+        while start < len(text):
+            # Find a good breaking point (period or space) near chunk_size
+            end = min(start + chunk_size, len(text))
+            if end < len(text):
+                # Try to find a period first
+                period_pos = text.rfind('.', start, end)
+                if period_pos > start + 1000:  # Only use period if we've processed enough text
+                    end = period_pos + 1
+                else:
+                    # Fall back to space
+                    space_pos = text.rfind(' ', start, end)
+                    if space_pos > start + 1000:  # Only use space if we've processed enough text
+                        end = space_pos + 1
+            
+            chunk = text[start:end].strip()
+            if chunk:
+                try:
+                    doc = client.recognize_entities(documents=[chunk])[0]
+                    if not doc.is_error:
+                        for e in doc.entities:
+                            if e.category in targets:
+                                cleaned = e.text.strip()
+                                if len(cleaned) > 1:
+                                    found_entities.add(cleaned)
+                except Exception as ex:
+                    logging.error(f"Error processing chunk: {ex}", exc_info=True)
+                    continue
+            
+            start = end
         
         return sorted(found_entities)
 
     except Exception as e:
-        print(f"Error in entity extraction: {e}")
+        logging.error(f"Error in entity extraction: {e}", exc_info=True)
         return []
