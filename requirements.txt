@@ -1,6 +1,6 @@
 # Core HTTP and parsing
-requests>=2.31.0
-beautifulsoup4>=4.12.0
+requests>=2.25.1
+beautifulsoup4>=4.9.3
 lxml>=4.9.0  # for faster BS4 parsing
 
 # Search indexing
@@ -21,10 +21,14 @@ tqdm>=4.65.0  # for progress bars
 aiohttp>=3.8.5  # for async requests
 
 # Additional requirements
-python-dotenv
+python-dotenv>=1.0.0
 warcio
 dnspython
 google-cloud-language
-openai
+openai>=1.12.0
 google-generativeai
-azure-ai-textanalytics 
+azure-ai-textanalytics
+PyPDF2>=3.0.0
+anthropic>=0.18.1
+ratelimit>=2.2.1
+mechanize>=0.4.5 

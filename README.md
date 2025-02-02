@@ -41,6 +41,54 @@ A comprehensive web analysis and search tool.
 - `help`                  (Show this help message)
 - `quit`                  (Exit the program)
 
+### Social Media Search Commands
+
+Search across social media platforms using simple keyword queries:
+
+```bash
+# Platform-specific searches
+keyword :reddit?      # Search Reddit
+keyword :youtube?     # Search YouTube
+keyword :vk?         # Search VKontakte
+keyword :tumblr?     # Search Tumblr
+keyword              # Search all platforms
+```
+
+Available platform aliases:
+- Reddit: `:reddit`, `:reddit.com`
+- YouTube: `:youtube`, `:youtube.com`, `:yt`
+- VKontakte: `:vk`, `:vk.com`, `:vk.ru`, `:vkontakte`
+- Tumblr: `:tumblr`, `:tumblr.com`
+- Web: `:web`
+
+Each result includes:
+- Platform name
+- Post timestamp
+- Author/username
+- Content type
+- Sentiment analysis
+- Full text content
+- Original URL
+
+Examples:
+```bash
+# Search for a topic on Reddit
+python tutorials :reddit?
+
+# Search for videos on YouTube
+machine learning :youtube?
+
+# Search VKontakte using any alias
+data science :vk?
+programming :vkontakte?
+coding :vk.ru?
+
+# Search across all supported platforms
+artificial intelligence
+```
+
+Note: Social media searches are separate from domain-based searches (e.g., `p! :domain.com?`) and will only trigger when using the platform-specific suffixes listed above.
+
 ## Examples
 
 ### Backlinks Analysis

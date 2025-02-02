@@ -1,0 +1,19 @@
+Document Search Results
+==================================================
+
+
+Document: StAR - Stolen Asset Recovery Initiative - Corruption Cases - Siemens AG (Italy Settlement)
+Schema: Document
+Links:
+- UI: https://aleph.occrp.org/entities/38101095.3da07221fc8d178470cdf3cce88726cb487e136c
+- File: https://aleph.occrp.org/api/2/archive?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjIjoiZGEzOWEzZWU1ZTZiNGIwZDMyNTViZmVmOTU2MDE4OTBhZmQ4MDcwOSIsImYiOiIzODEwMTA5NS4zZGEwNzIyMWZjOGQxNzg0NzBjZGYzY2NlODg3MjZjYjQ4N2UxMzZjIiwibSI6Imlub2RlL3gtZW1wdHkiLCJleHAiOjE3MzgwNjQ1MDB9.C0j2_rAWWEqj7oabStl5-sxUl8qJN9Y2cd_EwRK-vZk
+Collection: Stolen Asset Recovery Initiative
+________________________________________
+
+Document: Former Siemens Executive Pleads Guilty To Role in $100 Million Foreign Bribery Scheme
+Schema: Document
+Links:
+- UI: https://aleph.occrp.org/entities/27663916.7f233224727427b387e511dd201413db4188f6db
+- File: https://aleph.occrp.org/api/2/archive?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjIjoiZGEzOWEzZWU1ZTZiNGIwZDMyNTViZmVmOTU2MDE4OTBhZmQ4MDcwOSIsImYiOiIyNzY2MzkxNi5odG1sIiwibSI6InRleHQvaHRtbCIsImV4cCI6MTczODA2NDUwMH0.vjWw9Nt5bV25Km_Pa1BpAYbadZaoELgTDKxST-Na_XQ
+Collection: US DOJ Press releases
+________________________________________

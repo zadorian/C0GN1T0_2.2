@@ -13,6 +13,7 @@ sys.path.append(str(project_root))
 # Use absolute imports
 from config import config
 from indexing.scraping_indexing.scraping_indexer import ScrapingIndexer
+from utils.logging_config import debug_logger, progress_logger
 
 class CacheChecker:
     def __init__(self):
@@ -23,7 +24,7 @@ class CacheChecker:
         # Create directories if they don't exist
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.SITE_INDEX_DIR.mkdir(parents=True, exist_ok=True)
-        print(f"Cache checker initialized at: {self.cache_dir}")
+        debug_logger.debug(f"Cache checker initialized at: {self.cache_dir}")
 
     def _normalize_url(self, url: str) -> str:
         """Remove protocol, www., trailing '?' and lowercase the URL."""
@@ -33,7 +34,8 @@ class CacheChecker:
         normalized = normalized.rstrip('?')
         return normalized
 
-    def check_existing_content(self, url: str, year: Optional[str] = None, is_historic: bool = False, is_single_page: bool = False) -> Optional[Dict]:
+    def check_existing_content(self, url: str, year: Optional[str] = None, 
+                             is_historic: bool = False, is_single_page: bool = False) -> Optional[Dict]:
         """Check if content exists in cache. For current content, year should be None."""
         try:
             # For current content, we don't need year
@@ -44,81 +46,78 @@ class CacheChecker:
             domain = clean_url.split('/')[0]
 
             if is_historic and year:
+                debug_logger.debug(f"Checking historic cache for {domain} year {year}")
                 # Look for domain_*_[cw].json (typical for archived files)
                 pattern = str(self.cache_dir / f"{domain}_*_[cw].json")
                 matching_files = glob.glob(pattern)
 
                 for cache_file in matching_files:
                     cached_content = json.loads(Path(cache_file).read_text())
+                    debug_logger.debug(f"Checking cache file: {cache_file}")
 
-                    # Check both 'urls' and 'pages' for a matching year
-                    # (Some sources store data in 'urls', others in 'pages'.)
+                    # Check both 'urls' and 'pages'
                     for key in ['urls', 'pages']:
                         if key not in cached_content:
                             continue
 
                         for page in cached_content[key]:
                             ts = page.get('timestamp', '')
-                            if ts.startswith(year):  # e.g. "2022..."
+                            if ts.startswith(year):
                                 if is_single_page:
-                                    # For single page, compare exact URL
                                     if self._normalize_url(page.get('url', '')) == clean_url:
+                                        debug_logger.debug(f"Found matching single page in cache")
                                         return cached_content
                                 else:
-                                    # For domain-wide, any page from that year is enough
+                                    debug_logger.debug(f"Found matching domain content in cache")
                                     return cached_content
-
             else:
-                # Current (non-historic) => check domain_{today's date}_f.json
+                # Current (non-historic) content
                 date_str = datetime.now().strftime('%d%m%y')
                 cache_file = self.cache_dir / f"{domain}_{date_str}_f.json"
+                
                 if cache_file.exists():
+                    debug_logger.debug(f"Found current cache file: {cache_file}")
                     cached_content = json.loads(cache_file.read_text())
 
                     if not is_single_page:
-                        # Domain-wide: any match is good
+                        debug_logger.debug("Using domain-wide cached content")
                         return cached_content
                     else:
-                        # Single page: ensure the exact URL is cached
+                        # Single page: check exact URL
                         urls_found = []
                         for key in ['urls', 'pages']:
                             if key in cached_content:
                                 urls_found.extend(self._normalize_url(p.get('url', '')) 
-                                                  for p in cached_content[key])
+                                               for p in cached_content[key])
 
                         if clean_url in urls_found:
+                            debug_logger.debug(f"Found exact URL match in cache")
                             return cached_content
 
+            debug_logger.debug("No matching content found in cache")
             return None
 
         except Exception as e:
-            print(f"Error checking cache: {str(e)}")
-            traceback.print_exc()
+            debug_logger.error(f"Error checking cache: {str(e)}", exc_info=True)
             return None
 
     def cache_content(self, url: str, content: Dict, is_historic: bool, year: Optional[str] = None) -> None:
-        """
-        Saves new content into a cache file (domain_date_suffix.json),
-        then indexes it.
-        - is_historic => suffix='c' or 'archived'.
-        - otherwise => suffix='f'.
-        """
+        """Cache content and index it."""
         try:
             clean_url = self._normalize_url(url)
             domain = clean_url.split('/')[0]
 
-            # Get date from content's metadata if it exists, otherwise use today
             date_str = content.get('metadata', {}).get('date')
             if not date_str:
                 date_str = datetime.now().strftime('%d%m%y')
 
-            # Decide suffix based on source
             source = content.get('metadata', {}).get('source', '').lower()
             suffix = 'w' if source == 'wayback' else 'c' if source == 'commoncrawl' else 'f'
-
             filename = f"{domain}_{date_str}_{suffix}.json"
 
-            # Add minimal metadata if missing
+            debug_logger.debug(f"Caching content to: {filename}")
+
+            # Add metadata if missing
             if 'metadata' not in content:
                 content['metadata'] = {
                     'domain': domain,
@@ -134,15 +133,14 @@ class CacheChecker:
             with open(cache_file, 'w', encoding='utf-8') as f:
                 json.dump(content, f, indent=2)
 
-            # Index content using ScrapingIndexer instead of WebsiteContentIndexer
+            # Index content
             indexer = ScrapingIndexer(str(self.SITE_INDEX_DIR))
-            indexer.index_content(content)  # Remove domain parameter
+            indexer.index_content(content)
 
-            print(f"Cached and indexed content to {filename}")
+            progress_logger.info(f"Cached and indexed content to {filename}")
 
         except Exception as e:
-            print(f"Error caching content: {str(e)}")
-            traceback.print_exc()
+            debug_logger.error(f"Error caching content: {str(e)}", exc_info=True)
 
 # Global instance
 cache_checker = CacheChecker()

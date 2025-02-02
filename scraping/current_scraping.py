@@ -18,6 +18,7 @@ from scrapers.firecrawl import get_content
 from caching.scrape_caching import content_cache
 from caching.cache_checker import cache_checker
 from indexing.scraping_indexing.scraping_indexer import scraping_indexer
+from utils.logging_config import debug_logger, progress_logger
 
 CACHE_DIR = project_root / "cache"
 
@@ -30,10 +31,10 @@ class ContentController:
             is_single_page = url.startswith('?')
             clean_url = url
             
-            print(f"\nDEBUG: Initial URL format check:")
-            print(f"- URL: {url}")
-            print(f"- Domain-wide: {is_domain_wide}")
-            print(f"- Single page: {is_single_page}")
+            debug_logger.debug(f"\nDEBUG: Initial URL format check:")
+            debug_logger.debug(f"- URL: {url}")
+            debug_logger.debug(f"- Domain-wide: {is_domain_wide}")
+            debug_logger.debug(f"- Single page: {is_single_page}")
             
             # Clean up URL for single page requests
             if is_single_page:
@@ -48,14 +49,15 @@ class ContentController:
             )
             
             if cached_content:
-                print("DEBUG: Using cached content")
+                debug_logger.debug("DEBUG: Using cached content")
                 return cached_content
                 
             # If not in cache, get from FireCrawl
-            print(f"DEBUG: No cache found, fetching fresh content...")
+            progress_logger.info("Fetching fresh content...")
             content = await get_content(clean_url, is_domain_wide=is_domain_wide)
             
             if content:
+                progress_logger.info("Content retrieved successfully")
                 # Cache the content
                 cache_checker.cache_content(
                     url=clean_url,
@@ -67,7 +69,7 @@ class ContentController:
             return None
             
         except Exception as e:
-            print(f"Error in ContentController.get_content: {str(e)}")
+            debug_logger.error(f"Error in ContentController.get_content: {str(e)}")
             traceback.print_exc()
             return None
 

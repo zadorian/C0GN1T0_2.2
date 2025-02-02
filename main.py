@@ -3,6 +3,12 @@ import sys
 import logging
 from pathlib import Path
 from typing import Optional
+import os
+from openai import OpenAI
+from utils.logging_config import configure_logging, debug_logger
+
+# Increase recursion limit
+sys.setrecursionlimit(10000)  # Default is usually 1000
 
 # Ensure project root is on sys.path
 project_root = Path(__file__).parent
@@ -10,37 +16,12 @@ sys.path.append(str(project_root))
 
 # Configure logging
 def setup_logging():
-    # Create logs directory if it doesn't exist
+    # Create logs directory
     logs_dir = project_root / "logs"
     logs_dir.mkdir(exist_ok=True)
     
-    # Configure file handler for detailed logs
-    file_handler = logging.FileHandler(
-        logs_dir / "latest.log",
-        mode='w'  # Overwrite the file each time
-    )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(message)s'
-    ))
-    
-    # Configure console handler for progress only
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
-    # Only show progress messages (no timestamp, level, etc.)
-    console_handler.setFormatter(logging.Formatter('%(message)s'))
-    
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
-    
-    # Suppress detailed logs from other libraries
-    logging.getLogger('httpx').setLevel(logging.WARNING)
-    logging.getLogger('httpcore').setLevel(logging.WARNING)
-    logging.getLogger('aiohttp').setLevel(logging.WARNING)
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    # Configure our custom logging
+    configure_logging(logs_dir / "latest.log")
 
 # Import your modules
 from website_modules.website_modules import WebsiteModules
@@ -59,6 +40,7 @@ def get_help_text() -> str:
    @! :domain.com?              (Find emails)
    t! :domain.com?              (Find phone numbers)
    ent! :domain.com?            (Find all entity types)
+   sum! :domain.com?            (Get company summary)
 
 2. Historic Content:
    p! :2022! domain.com?        (Find people from 2022)
@@ -80,6 +62,20 @@ whois! domain.com?    (Get WHOIS information)
 age! domain.com?      (Get domain age)
 alldom! domain.com?   (Get all domain info)
 
+=== Social Media Search Commands ===
+keyword :reddit?      (Search Reddit)
+keyword :youtube?     (Search YouTube)
+keyword :vk?         (Search VKontakte)
+keyword :tumblr?     (Search Tumblr)
+keyword              (Search all platforms)
+
+Available platform aliases:
+- Reddit: :reddit, :reddit.com
+- YouTube: :youtube, :youtube.com, :yt
+- VKontakte: :vk, :vk.com, :vk.ru, :vkontakte
+- Tumblr: :tumblr, :tumblr.com
+- Web: :web
+
 === System Commands ===
 reindex! all          (Reindex all cached files)
 forget!               (Clean all cache and index files)
@@ -100,27 +96,29 @@ async def dispatch_command(command: str, wsm: WebsiteModules, wss: WebsiteSearch
     elif cmd_lower == "forget!":
         cleanup()
         return "Cache and index files cleaned successfully"
+    elif cmd_lower == "help":
+        return get_help_text()
 
-    # 2. Handle scraping index searcher commands
-    if cmd_lower.endswith('???') or cmd_lower.endswith('??'):
-        query = cmd_lower.rstrip('?')
-        matches = scraping_indexer.search_index(query)
-        if cmd_lower.endswith('???'):
-            return scraping_indexer.format_raw_results(matches)
-        else:
-            return scraping_indexer.save_to_memory(query, matches)
-
-    # 3. Check for comparison commands
+    # 2. Handle comparison commands
     if "=?" in command:
         from website_searchers.comparison import ComparisonSearcher
         comp = ComparisonSearcher()
         return await comp.handle_comparison_command(command)
 
-    # 4. Check for website_modules commands
+    # 3. Check for website_modules commands
     first_token = command.split()[0] if command else ""
     module_prefixes = ["bl!", "!bl", "ga!", "whois!", "age!", "alldom!"]
     if any(first_token.startswith(op) for op in module_prefixes):
         return await wsm.process_command(command)
+
+    # 4. Check for social media platform specific searches
+    social_platforms = [':reddit', ':reddit.com', ':youtube', ':youtube.com', ':yt',
+                       ':vk', ':vk.com', ':vk.ru', ':vkontakte', ':tumblr', ':tumblr.com']
+    if any(platform in cmd_lower for platform in social_platforms):
+        from search_engines.socialsearcher import SocialSearcher
+        searcher = SocialSearcher()
+        searcher.search(command)
+        return ""  # Return empty string since searcher handles its own output
 
     # 5. All other commands go to WebsiteSearcher
     return await wss.process_command(command)
