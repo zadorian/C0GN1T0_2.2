@@ -74,3 +74,4 @@ Thumbs.db config.py
 AI_models/chatgpt-4o-mini.py
 AI_models/ai_vision.py
 social_media/linkedin_bio.py
+vision/clipboard_vision.py
